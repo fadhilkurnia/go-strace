@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
@@ -45,8 +46,36 @@ type Handler interface {
 type SimplePrint struct{}
 
 var DefaultHandler Handler = &SimplePrint{}
+const targetFilePath = "test.txt"
+var targetFileDescriptor= int(-1)
 
 func (*SimplePrint) Handle(t *Tracee) {
+	if t.State == SYSCALL_ENTER_STOP {
+		if targetFileDescriptor != -1 &&
+			t.s_ent.SysName == "write" &&
+			int(t.u_arg[0]) == targetFileDescriptor {
+			resp, err := http.Get("http://localhost:8080/")
+			if err != nil {
+				tprintf("failed to contact server %s\n", err)
+				return
+			}
+			defer resp.Body.Close()
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				tprintf("failed to read response from server %s\n", err)
+				return
+			}
+			tprintf("response from server: %s", body)
+		}
+	}
+	if t.State == SYSCALL_EXIT_STOP && t.s_ent.SysName == "open" {
+		tprintf("%s file-descriptor is %d\n", targetFilePath, targetFileDescriptor)
+		targetFileDescriptor = t.Result
+	}
+	if t.State == EXIT {
+		tprintf("Child(%d) exit with status %v\n", t.Pid, t.ExitStatus)
+	}
+	return
 	switch t.State {
 	case SYSCALL_ENTER_STOP:
 		tprintf("%s(", t.s_ent.SysName)
