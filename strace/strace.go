@@ -51,11 +51,15 @@ var targetFileDescriptor= int(-1)
 
 func (*SimplePrint) Handle(t *Tracee) {
 	if t.State == SYSCALL_ENTER_STOP {
+		tprintf("%s(", t.s_ent.SysName)
+		print_syscall_args(t)
+		tprintf(") = ")
 		if targetFileDescriptor != -1 &&
 			t.s_ent.SysName == "write" &&
 			int(t.u_arg[0]) == targetFileDescriptor {
 			resp, err := http.Get("http://localhost:8080/")
 			if err != nil {
+				// TODO: set the syscall as failed
 				tprintf("failed to contact server %s\n", err)
 				return
 			}
@@ -65,12 +69,25 @@ func (*SimplePrint) Handle(t *Tracee) {
 				tprintf("failed to read response from server %s\n", err)
 				return
 			}
-			tprintf("response from server: %s", body)
+			tprintf("response from server: %s\n", body)
 		}
 	}
-	if t.State == SYSCALL_EXIT_STOP && t.s_ent.SysName == "open" {
-		tprintf("%s file-descriptor is %d\n", targetFilePath, targetFileDescriptor)
-		targetFileDescriptor = t.Result
+	if t.State == SYSCALL_EXIT_STOP {
+		tprintf("%d\n", t.Result)
+		if t.s_ent.SysName == "open" && targetFilePath == ReadString(t.Pid, t.u_arg[0]) {
+			targetFileDescriptor = t.Result
+			tprintf("%s file-descriptor is %d\n", targetFilePath, targetFileDescriptor)
+		}
+		// handling if the fd is changed
+		if targetFileDescriptor != -1 && (t.s_ent.SysName == "dup" || t.s_ent.SysName == "dup2") && t.Result != -1 {
+			tprintf("fd is changed ...\n")
+			targetFileDescriptor = t.Result
+		}
+		// handling if the file is closed
+		if targetFileDescriptor != -1 && t.s_ent.SysName == "close" && int(t.u_arg[0]) == targetFileDescriptor {
+			tprintf("closing file ...\n")
+			targetFileDescriptor = -1
+		}
 	}
 	if t.State == EXIT {
 		tprintf("Child(%d) exit with status %v\n", t.Pid, t.ExitStatus)
