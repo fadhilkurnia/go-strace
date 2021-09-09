@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/maebashi/go-strace/strace"
+	"cs.umass.edu/fikurnia/go-strace/strace"
 )
 
 func main() {
